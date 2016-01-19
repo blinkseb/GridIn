@@ -123,7 +123,7 @@ def getGitTagRepoUrl(gitCallPath):
         raise AssertionError("Code from repository " + repoUpstream + " has not been pushed")
     return gitHash, repo, url
 
-def add_sample(NAME, localpath, type, nevents, nselected, AnaUrl, FWUrl, dataset_id, sumw, has_job_processed_everything, dataset_nevents, files, processed_lumi=None):
+def add_sample(NAME, localpath, type, nevents, nselected, AnaUrl, FWUrl, dataset_id, sumw, has_job_processed_everything, not_processed_string, dataset_nevents, files, processed_lumi=None):
     dbstore = DbStore()
 
     sample = None
@@ -149,7 +149,7 @@ def add_sample(NAME, localpath, type, nevents, nselected, AnaUrl, FWUrl, dataset
 #    sample.luminosity  = 40028954.499 / 1e6 # FIXME: figure out the fix for data whenever the tools will stabilize and be on cvmfs
     sample.code_version = unicode(AnaUrl + ' ' + FWUrl) #NB: limited to 255 characters, but so far so good
     if not has_job_processed_everything:
-        sample.user_comment = unicode("Sample was not fully processed, only " + str(nevents) + "/" + str(dataset_nevents) + " events were processed")
+        sample.user_comment = unicode(not_processed_string)
     else:
         sample.user_comment = u""
     sample.source_dataset_id = dataset_id
@@ -291,18 +291,34 @@ def main():
     print("")
 
     print "##### Check if the job processed the whole sample"
-    has_job_processed_everything = (dataset_nevents == report['eventsRead']) and not file_missing
     is_data = (module.config.Data.splitting == 'LumiBased')
+
+    has_job_processed_everything = not file_missing
+    if not is_data:
+        has_job_processed_everything = has_job_processed_everything and (dataset_nevents == report['eventsRead'])
+
+    not_processed_string = ""
     if has_job_processed_everything:
         print "done"
     else:
-        if is_data:
-            # This is data, it is expected to not run on everything given we use a lumiMask
-            print "done"
+        # Warn
+        if file_missing:
+            print "Warning: you are about to add in the DB a sample which has some missing jobs on the storage (%d files on storage out of %d reported by crab, %.2f%%)" % (len(db_files), len(files), len(files) / len(db_files) * 100)
+            missing_files = list(set(db_files) - set(files))
+            # Extract job id from file name
+            regex = re.compile('_(\d*)\.root$')
+            ids = []
+            for f in missing_files:
+                ids += [int(regex.search(f).group(1))]
+            print "Affected jobs are: %s" % ', '.join(ids)
+
+            not_processed_string = "Some files are missing (%d files on storage out of %d reported by crab, %.2f%%)" % (len(db_files), len(files), len(files) / len(db_files) * 100)
         else:
-            # Warn
             print "Warning: You are about to add in the DB a sample which has not been completely processed (%d events out of %d, %.2f%%)" % (report['eventsRead'], dataset_nevents, report['eventsRead'] / dataset_nevents * 100)
-            print "If you want to update this sample later on with more statistics, simply re-execute this script with the same arguments."
+
+            not_processed_string = "Sample not completely processed (%d events out of %d, %.2f%%)" % (report['eventsRead'], dataset_nevents, report['eventsRead'] / dataset_nevents * 100)
+
+        print "If you want to update this sample later on with more statistics, simply re-execute this script with the same arguments."
 
     print("")
 
@@ -336,7 +352,7 @@ def main():
     # dataset_nselected
     # localpath
     NAME = requestName + '_' + FWHash + '_' + AnaRepo + '_' + AnaHash
-    add_sample(NAME, folder, "NTUPLES", report['eventsRead'], dataset_nselected, AnaUrl, FWUrl, dataset_id, dataset_sumw, has_job_processed_everything, dataset_nevents, db_files, processed_lumi)
+    add_sample(NAME, folder, "NTUPLES", report['eventsRead'], dataset_nselected, AnaUrl, FWUrl, dataset_id, dataset_sumw, has_job_processed_everything, not_processed_string, dataset_nevents, db_files, processed_lumi)
 
 if __name__ == '__main__':
     main() 
