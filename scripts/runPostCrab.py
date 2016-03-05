@@ -168,6 +168,7 @@ def add_sample(NAME, localpath, type, nevents, nselected, AnaUrl, FWUrl, dataset
         sample = checkExisting.one()
         sample.removeFiles(dbstore)
 
+    sample.path = unicode(localpath)
     sample.nevents_processed = nevents
     sample.nevents = nselected
     sample.normalization = 1
